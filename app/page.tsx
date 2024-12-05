@@ -6,6 +6,17 @@ export default function Home() {
     <div className="min-h-screen bg-zinc-950">
       <main className="container mx-auto px-6 py-16">
         <div className="flex flex-col items-center text-center space-y-8">
+          <Image
+            src="/favicon-96x96.png"
+            alt="SpotAuth-Lite Logo"
+            width={64}
+            height={64}
+            className="mb-6 w-16 h-16"
+            priority
+            style={{
+              objectFit: 'contain'
+            }}
+          />
           <h1 className="text-5xl font-bold text-green-400">SpotAuth-Lite</h1>
           <p className="text-xl text-zinc-400 max-w-2xl">
             A lightweight service that validates music metadata and protects your catalog from fraudulent uploads.

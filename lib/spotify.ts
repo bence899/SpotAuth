@@ -1,6 +1,6 @@
 export const getSpotifyAuthUrl = () => {
   const clientId = process.env.NEXT_PUBLIC_SPOTIFY_CLIENT_ID;
-  const redirectUri = 'http://localhost:3000/verify';
+  const redirectUri = process.env.NEXT_PUBLIC_REDIRECT_URI || 'http://localhost:3000/verify';
   
   // Define permissions we need
   const scope = [

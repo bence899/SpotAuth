@@ -1,6 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { getSpotifyAuthUrl } from "@/lib/spotify";
+import { API_URL } from '@/lib/constants';
+import Link from "next/link";
 
 export default function Verify() {
   const [spotifyToken, setSpotifyToken] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export default function Verify() {
     }
 
     try {
-      const response = await fetch("http://localhost:3001/verify", {
+      const response = await fetch("/api/verify", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -51,6 +53,21 @@ export default function Verify() {
   return (
     <div className="min-h-screen bg-zinc-950 py-16 px-4">
       <div className="max-w-2xl mx-auto space-y-8">
+        <div className="flex justify-between items-center mb-8">
+          <Link 
+            href="/dashboard"
+            className="text-green-400 hover:text-green-300 flex items-center gap-2"
+          >
+            ← Back to Dashboard
+          </Link>
+          <Link 
+            href="/"
+            className="text-green-400 hover:text-green-300 flex items-center gap-2"
+          >
+            Home
+          </Link>
+        </div>
+
         <div className="text-center">
           <h1 className="text-3xl font-bold text-green-400 mb-4">Track Verification</h1>
           <p className="text-zinc-400">
