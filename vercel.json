@@ -2,8 +2,5 @@
     "version": 2,
     "buildCommand": "npm run build",
     "installCommand": "npm install",
-    "framework": "nextjs",
-    "env": {
-      "NEXT_PUBLIC_SPOTIFY_CLIENT_ID": "@spotify_client_id"
-    }
-  }
+    "framework": "nextjs"
+}
