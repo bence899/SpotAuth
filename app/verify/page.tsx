@@ -1,13 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
 import { getSpotifyAuthUrl } from "@/lib/spotify";
-import { API_URL } from '@/lib/constants';
 import Link from "next/link";
+import { FiLoader } from 'react-icons/fi';
 
 export default function Verify() {
   const [spotifyToken, setSpotifyToken] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [result, setResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const hash = window.location.hash
@@ -32,6 +33,16 @@ export default function Verify() {
       return;
     }
 
+    const [title, artist] = searchQuery.split('-').map(s => s.trim());
+    
+    if (!title || !artist) {
+      alert('Please enter the track in format: "Title - Artist"');
+      return;
+    }
+
+    setIsLoading(true);
+    setResult(null);
+
     try {
       const response = await fetch("/api/verify", {
         method: "POST",
@@ -39,14 +50,18 @@ export default function Verify() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${spotifyToken}`
         },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ title, artist }),
       });
+
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const data = await response.json();
       setResult(data);
     } catch (error) {
       console.error('Error:', error);
       setResult({ valid: false, message: 'Error searching track' });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -88,23 +103,43 @@ export default function Verify() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search for a track (e.g., 'Shape of You - Ed Sheeran')"
+              placeholder="Enter track as: Title - Artist (e.g., 'Shape of You - Ed Sheeran')"
               className="w-full p-3 rounded bg-zinc-800 text-zinc-200 border border-zinc-700"
+              disabled={isLoading}
             />
             <button 
               type="submit"
-              className="w-full bg-green-500 hover:bg-green-600 text-black py-3 rounded-lg font-medium"
+              className="w-full bg-green-500 hover:bg-green-600 text-black py-3 rounded-lg font-medium relative"
+              disabled={isLoading}
             >
-              Verify Track
+              {isLoading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <FiLoader className="animate-spin" />
+                  <span>Verifying Track...</span>
+                </div>
+              ) : (
+                'Verify Track'
+              )}
             </button>
           </form>
         )}
 
-        {result && (
-          <div className={`p-6 rounded-lg ${result.valid ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
-            <h3 className={`text-xl font-bold ${result.valid ? 'text-green-400' : 'text-red-400'}`}>
+        {isLoading && (
+          <div className="mt-8 text-center text-zinc-400 space-y-4">
+            <FiLoader className="animate-spin inline-block w-8 h-8" />
+            <p>Analyzing track metadata and checking databases...</p>
+          </div>
+        )}
+
+        {result && !isLoading && (
+          <div className={`mt-8 p-6 rounded-lg transition-all duration-300 ${
+            result.valid ? 'bg-green-500/20' : 'bg-red-500/20'
+          }`}>
+            <h2 className={`text-xl font-bold mb-2 ${
+              result.valid ? 'text-green-400' : 'text-red-400'
+            }`}>
               {result.message}
-            </h3>
+            </h2>
             {result.track && (
               <div className="mt-4 text-zinc-400">
                 <p>Title: {result.track.title}</p>
