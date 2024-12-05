@@ -4,26 +4,31 @@ const axios = require('axios');
 
 // Verify Track Metadata against Spotify
 router.post('/', async (req, res) => {
-    const { title, artist } = req.body;
-    
+    const { query } = req.body;
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+        return res.status(401).json({
+            valid: false,
+            message: 'Missing authorization token'
+        });
+    }
+
     try {
-        // Search Spotify for the track
         const response = await axios.get(`https://api.spotify.com/v1/search`, {
             params: {
-                q: `track:${title} artist:${artist}`,
+                q: query,
                 type: 'track',
                 limit: 1
             },
             headers: {
-                'Authorization': `Bearer ${req.headers.authorization}`
+                'Authorization': `Bearer ${token}`
             }
         });
 
-        const tracks = response.data.tracks.items;
+        const track = response.data.tracks.items[0];
         
-        if (tracks.length > 0) {
-            // Found matching track
-            const track = tracks[0];
+        if (track) {
             const isAIGenerated = checkForAIPatterns(track.name, track.artists[0].name);
             
             return res.json({
@@ -31,33 +36,43 @@ router.post('/', async (req, res) => {
                 track: {
                     title: track.name,
                     artist: track.artists[0].name,
-                    duration: msToMinutesAndSeconds(track.duration_ms),
-                    spotifyId: track.id,
                     previewUrl: track.preview_url
                 },
-                message: isAIGenerated ? 'Potential AI-generated content detected' : 'Track verified in Spotify catalog'
+                message: isAIGenerated 
+                    ? 'This track shows patterns of AI generation' 
+                    : 'Track appears to be legitimate'
             });
         }
         
-        return res.status(404).json({
+        return res.json({
             valid: false,
-            message: 'Track not found in Spotify catalog'
+            message: 'Track not found'
         });
     } catch (error) {
         console.error('Spotify API Error:', error);
         return res.status(500).json({
             valid: false,
-            message: 'Error validating track metadata'
+            message: 'Error searching track'
         });
     }
 });
 
 // Helper function to check for AI patterns
 function checkForAIPatterns(title, artist) {
-    const aiKeywords = ['AI', 'Generated', 'Neural', 'Deep Learning', 'GPT'];
+    const aiKeywords = [
+        'AI', 'Generated', 'Neural', 'Deep Learning', 'GPT',
+        'Heart on My Sleeve', // Known AI-generated track
+        'Ghostwriter', // Common AI music maker term
+        'Drake AI', 'AI Drake', // AI versions of artists
+        'Synthetic', 'Computer Generated'
+    ];
+    
+    const titleLower = title.toLowerCase();
+    const artistLower = artist.toLowerCase();
+    
     return aiKeywords.some(keyword => 
-        title.toLowerCase().includes(keyword.toLowerCase()) ||
-        artist.toLowerCase().includes(keyword.toLowerCase())
+        titleLower.includes(keyword.toLowerCase()) ||
+        artistLower.includes(keyword.toLowerCase())
     );
 }
 
