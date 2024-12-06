@@ -1,50 +1,73 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import { searchRecording } from '@/app/lib/musicbrainz';
+import { SpotifyArtist, SpotifyTrack } from '@/app/types/spotify';
+import { contentPatterns } from '@/app/config/aiPatterns';
 
-function analyzeMetadata(title: string, artist: string): number {
+function analyzeMetadata(searchTitle: string, searchArtist: string, foundTitle: string, foundArtist: string): number {
     let score = 1.0;
     
-    // Check for unusual patterns that might indicate AI generation
-    const unusualPatterns = [
-        // Extremely long or short titles
-        title.length < 2 || title.length > 100,
-        // Repeated characters
-        /(.)\1{4,}/.test(title),
-        // Random number sequences
-        /\d{4,}/.test(title),
-        // Unusual character combinations
-        /[^a-zA-Z0-9\s\-'.,&!?]/.test(title),
-        // Lack of vowels
-        !/[aeiou]/i.test(title),
-        // Excessive punctuation
-        (title + artist).split('').filter(char => /[!?.,]/.test(char)).length > 3
-    ];
+    // Exact match check
+    if (searchTitle.toLowerCase() !== foundTitle.toLowerCase()) {
+        score -= 0.4;
+    }
     
-    // Reduce score for each unusual pattern
-    score -= (unusualPatterns.filter(Boolean).length * 0.2);
+    if (searchArtist.toLowerCase() !== foundArtist.toLowerCase()) {
+        score -= 0.4;
+    }
     
     return Math.max(0, score);
 }
 
-function calculateDatabaseConfidence(shazamResult: any, mbResult: any): number {
-    // Weight the confidence based on presence in databases
-    const shazamWeight = shazamResult.found ? 0.6 : 0;
-    const mbWeight = mbResult.found ? 0.4 : 0;
-    return shazamWeight + mbWeight;
+interface ServiceResults {
+    shazam: {
+        found: boolean;
+        confidence: number;
+        totalResults?: number;
+        error?: string;
+    };
+    musicBrainz: {
+        found: boolean;
+        confidence: number;
+        recordings?: any[];
+        error?: string;
+    };
 }
 
-function msToMinutesAndSeconds(ms: number) {
-    const minutes = Math.floor(ms / 60000);
-    const seconds = ((ms % 60000) / 1000).toFixed(0);
-    return `${minutes}:${seconds.padStart(2, '0')}`;
-}
+function calculateDatabaseConfidence(results: ServiceResults): number {
+    // Define weights for each service
+    const weights = {
+        spotify: 0.3,  // 30%
+        shazam: 0.4,   // 40%
+        musicBrainz: 0.3  // 30%
+    };
 
-interface ShazamTrack {
-    track: {
-        title: string;
-        subtitle: string;
+    let confidence = 0;
+    
+    // Add Spotify base confidence (always present)
+    confidence += weights.spotify;
+    
+    // Add Shazam confidence if found
+    if (results.shazam.found) {
+        confidence += weights.shazam;
     }
+    
+    // Add MusicBrainz confidence if found
+    if (results.musicBrainz.found) {
+        confidence += weights.musicBrainz;
+    }
+
+    // Example calculation for your case:
+    // Spotify (always): 0.3
+    // Shazam (found): 0.4
+    // MusicBrainz (not found): 0
+    // Total: 0.7 * 1.2 = 0.84 (84%)
+    
+    // Apply a multiplier based on number of sources found
+    const sourcesFound = [true, results.shazam.found, results.musicBrainz.found].filter(Boolean).length;
+    const multiplier = 1 + ((sourcesFound - 1) * 0.2); // 1.0, 1.2, or 1.4 based on sources
+    
+    return Math.round((confidence * multiplier) * 100) / 100; // Round to 2 decimal places
 }
 
 async function checkWithShazam(title: string, artist: string) {
@@ -55,7 +78,12 @@ async function checkWithShazam(title: string, artist: string) {
     const options = {
         method: 'GET',
         url: 'https://shazam.p.rapidapi.com/search',
-        params: { term: `${title} ${artist}` },
+        params: {
+            term: `${title} ${artist}`,
+            locale: 'en-US',
+            offset: '0',
+            limit: '5'
+        },
         headers: {
             'X-RapidAPI-Key': process.env.RAPIDAPI_KEY,
             'X-RapidAPI-Host': 'shazam.p.rapidapi.com'
@@ -66,15 +94,25 @@ async function checkWithShazam(title: string, artist: string) {
         const response = await axios.request(options);
         const tracks = response.data?.tracks?.hits || [];
         
-        // Check if the track exists in Shazam's database with null checks
+        // Improved matching logic
         const found = tracks.some((hit: ShazamTrack) => {
-            if (!hit?.track?.title || !hit?.track?.subtitle) return false;
+            if (!hit?.track) return false;
             
-            const trackTitle = hit.track.title.toLowerCase();
-            const trackArtist = hit.track.subtitle.toLowerCase();
+            const trackTitle = hit.track.title?.toLowerCase() || '';
+            const trackArtist = hit.track.subtitle?.toLowerCase() || '';
+            const searchTitle = title.toLowerCase();
+            const searchArtist = artist.toLowerCase();
             
-            return trackTitle.includes(title.toLowerCase()) && 
-                   trackArtist.includes(artist.toLowerCase());
+            const titleMatch = compareSimilarity(trackTitle, searchTitle);
+            const artistMatch = compareSimilarity(trackArtist, searchArtist);
+            
+            return titleMatch && artistMatch;
+        });
+
+        console.log('Shazam search results:', {
+            searchTerm: `${title} ${artist}`,
+            tracksFound: tracks.length,
+            found
         });
 
         return {
@@ -93,57 +131,233 @@ async function checkWithShazam(title: string, artist: string) {
     }
 }
 
-async function checkAcousticFingerprint(audioUrl: string) {
-    const response = await axios.post('https://api.acoustid.org/v2/lookup', {
-        client: process.env.ACOUSTID_API_KEY,
-        meta: 'recordings',
-        fingerprint: audioUrl
+// Reuse the same similarity comparison function
+function compareSimilarity(str1: string, str2: string): boolean {
+    const normalize = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '');
+    const s1 = normalize(str1);
+    const s2 = normalize(str2);
+    return s1.includes(s2) || s2.includes(s1);
+}
+
+function calculateOverallConfidence(results: ServiceResults, metadataScore: number, aiAnalysisScore: number): number {
+    const safeMetadataScore = metadataScore || 0;
+    const safeAiScore = aiAnalysisScore || 0;
+    
+    const weights = {
+        aiAnalysis: 0.5,
+        metadata: 0.2,
+        database: 0.3
+    };
+    
+    const aiConfidence = 1 - safeAiScore;
+    const aiComponent = weights.aiAnalysis * aiConfidence;
+    const metadataComponent = weights.metadata * safeMetadataScore;
+    const dbComponent = weights.database * calculateDatabaseConfidence(results);
+    
+    const totalConfidence = aiComponent + metadataComponent + dbComponent;
+    return Math.round(totalConfidence * 100) / 100;
+}
+
+interface AIAnalysisResult {
+    score: number;
+    patterns: string[];
+}
+
+function analyzeAIPatterns(track: SpotifyTrack): AIAnalysisResult {
+    let aiPatternScore = 0;
+    const patterns: string[] = [];
+
+    // Check metadata patterns
+    contentPatterns.metadata.forEach(({ pattern, weight, description }) => {
+        if (pattern.test(track.name) || pattern.test(track.artists[0].name)) {
+            aiPatternScore += weight;
+            patterns.push(description);
+        }
     });
-    return response.data;
+
+    // Check artist profile patterns
+    Object.values(contentPatterns.artistProfile).forEach(({ condition, weight, description }) => {
+        if (condition(track.artists[0])) {
+            aiPatternScore += weight;
+            patterns.push(description);
+        }
+    });
+
+    return {
+        score: Math.min(1, aiPatternScore),
+        patterns: patterns.length > 0 ? patterns : ['No suspicious patterns detected']
+    };
+}
+
+interface ArtistMetadataAnalysis {
+    score: number;
+    patterns: string[];
+}
+
+async function analyzeArtistMetadata(artist: SpotifyArtist): Promise<ArtistMetadataAnalysis> {
+    let suspiciousScore = 0;
+    const patterns: string[] = [];
+
+    // Only flag if both conditions are met: low followers AND low popularity
+    if (artist.followers && artist.followers.total < 100 && (!artist.popularity || artist.popularity < 20)) {
+        suspiciousScore += 0.3;
+        patterns.push('Limited artist history');
+    }
+
+    // Check for unusual popularity/follower ratio
+    if (artist.followers && artist.popularity) {
+        const followersToPopularityRatio = artist.followers.total / artist.popularity;
+        if (followersToPopularityRatio < 1 && artist.followers.total < 1000) {
+            suspiciousScore += 0.4;
+            patterns.push('Unusual popularity/follower ratio');
+        }
+    }
+
+    // Check social media presence
+    if (!artist.external_urls || Object.keys(artist.external_urls).length < 2) {
+        suspiciousScore += 0.2;
+        patterns.push('Limited social media presence');
+    }
+
+    // Only check release history if albums data is available
+    if (artist.albums?.items && artist.albums.items.length > 0) {
+        const releases = artist.albums.items;
+        const sortedReleases = releases.sort((a, b) => 
+            new Date(b.release_date).getTime() - new Date(a.release_date).getTime()
+        );
+        
+        const last30Days = sortedReleases.filter(release => {
+            const releaseDate = new Date(release.release_date);
+            const daysSinceRelease = (new Date().getTime() - releaseDate.getTime()) / (1000 * 3600 * 24);
+            return daysSinceRelease <= 30;
+        });
+
+        if (last30Days.length > 3) {
+            suspiciousScore += 0.5;
+            patterns.push('Unusual burst of releases');
+        }
+    }
+
+    return {
+        score: Math.min(1, suspiciousScore),
+        patterns
+    };
 }
 
 export async function POST(req: Request) {
     try {
-        const { title, artist } = await req.json();
+        const { query, token } = await req.json();
         
-        // Check multiple music databases in parallel
+        if (!query) {
+            throw new Error('Search query is required');
+        }
+        
+        if (!token) {
+            throw new Error('Please connect with Spotify first');
+        }
+
+        // Search track using Spotify's search endpoint
+        const spotifyResponse = await axios.get(
+            `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=1`,
+            {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+
+        const track = spotifyResponse.data.tracks.items[0];
+        if (!track) {
+            throw new Error('Track not found on Spotify');
+        }
+
+        // Extract title and artist for analysis
+        const title = track.name;
+        const artist = track.artists[0].name;
+
+        // Run all our analysis functions
+        const metadataScore = analyzeMetadata(query, '', title, artist);
+        const aiAnalysis = analyzeAIPatterns(track);
+        const artistAnalysis = await analyzeArtistMetadata(track.artists[0]);
+        const unusualPatterns = getUnusualPatterns(title, artist);
+
+        // Get results from other services
         const [shazamResult, mbResult] = await Promise.all([
             checkWithShazam(title, artist),
             searchRecording(title, artist)
         ]);
 
-        // Calculate confidence based on database presence
-        const databaseConfidence = calculateDatabaseConfidence(shazamResult, mbResult);
-        
-        // Analyze metadata patterns
-        const metadataScore = analyzeMetadata(title, artist);
-        
-        // Combined analysis
-        const confidence = (databaseConfidence + metadataScore) / 2;
-        const isLegitimate = confidence > 0.5;
+        // Calculate database confidence
+        const databaseConfidence = calculateDatabaseConfidence({
+            shazam: shazamResult,
+            musicBrainz: mbResult,
+        });
+
+        const overallConfidence = calculateOverallConfidence({
+            shazam: shazamResult,
+            musicBrainz: mbResult,
+        }, metadataScore, aiAnalysis.score);
 
         return NextResponse.json({
-            valid: isLegitimate,
-            confidence,
-            sources: {
-                shazam: shazamResult.found,
-                musicBrainz: mbResult.found,
-                metadataAnalysis: metadataScore > 0.5
+            valid: true,
+            confidence: overallConfidence,
+            track: {
+                title,
+                artist,
+                previewUrl: track.preview_url,
+                albumArt: track.album.images[0]?.url,
+                duration: msToMinutesAndSeconds(track.duration_ms)
             },
-            message: isLegitimate 
-                ? 'Track appears to be legitimate' 
-                : 'Track shows unusual patterns or limited presence in music databases',
             details: {
-                shazamResults: shazamResult.totalResults,
-                musicBrainzResults: mbResult.recordings?.length || 0,
-                metadataScore
+                metadataScore,
+                databaseConfidence,
+                aiPatternScore: aiAnalysis.score,
+                aiPatterns: [...aiAnalysis.patterns, ...unusualPatterns],
+                artistPatterns: artistAnalysis.patterns,
+                sources: {
+                    spotify: true,
+                    shazam: shazamResult.found,
+                    musicBrainz: mbResult.found
+                }
             }
         });
+
     } catch (error) {
-        console.error('Verification error:', error);
-        return NextResponse.json(
-            { error: 'Verification failed' }, 
-            { status: 500 }
-        );
+        return NextResponse.json({
+            valid: false,
+            confidence: 0,
+            error: error instanceof Error ? error.message : 'Verification failed'
+        }, { status: 400 });
     }
-} 
+}
+
+function getUnusualPatterns(title: string, artist: string): string[] {
+    const patterns = [];
+    
+    // Check title patterns
+    if (title.length > 100) patterns.push('Unusually long title');
+    if (/(.)\1{5,}/.test(title)) patterns.push('Repetitive character patterns in title');
+    if (!/[aeiouáéíóúàìòùäëïöüāēīōū]/i.test(title)) patterns.push('Title lacks vowels');
+    if (/\d{4,}/.test(title)) patterns.push('Title contains unusual number sequences');
+    
+    // Check artist patterns
+    if (artist.length < 2) patterns.push('Unusually short artist name');
+    if (/^[A-Z0-9_]+$/.test(artist)) patterns.push('Artist name uses only uppercase and numbers');
+    if (/AI|Bot|Generated|Neural/i.test(artist)) patterns.push('Artist name contains AI-related terms');
+    
+    return patterns;
+}
+
+function msToMinutesAndSeconds(ms: number) {
+    const minutes = Math.floor(ms / 60000);
+    const seconds = ((ms % 60000) / 1000).toFixed(0);
+    return `${minutes}:${seconds.padStart(2, '0')}`;
+}
+
+interface ShazamTrack {
+    track: {
+        title: string;
+        subtitle: string;
+    }
+}

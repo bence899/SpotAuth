@@ -63,9 +63,9 @@ export default function Documentation() {
             <div className="bg-zinc-900 p-6 rounded-lg border border-zinc-800">
               <p className="text-zinc-400 mb-4">Our AI detection looks for common patterns in:</p>
               <ul className="list-disc list-inside text-zinc-400 space-y-2">
-                <li>Track titles containing AI-related terms</li>
-                <li>Artist names that suggest computer generation</li>
-                <li>Unusual metadata patterns typical of AI content</li>
+                <li>Track metadata analysis</li>
+                <li>Artist profile verification</li>
+                <li>Cross-database validation</li>
               </ul>
               <div className="mt-4 p-4 bg-zinc-800 rounded">
                 <p className="text-sm text-zinc-400">

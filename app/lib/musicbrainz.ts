@@ -11,8 +11,7 @@ const mbClient = rateLimit(axios.create({
     baseURL: MB_API_URL,
     headers: {
         'User-Agent': USER_AGENT,
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${process.env.MB_CLIENT_ID}:${process.env.MB_CLIENT_SECRET}`
+        'Accept': 'application/json'
     }
 }), { maxRequests: 1, perMilliseconds: 1000 });
 
@@ -20,15 +19,32 @@ export async function searchRecording(title: string, artist: string) {
     try {
         const response = await mbClient.get('/recording', {
             params: {
-                query: `recording:"${title}" AND artist:"${artist}"`,
-                fmt: 'json'
+                query: `recording:"${title}" AND artistname:"${artist}"`,
+                fmt: 'json',
+                limit: 10
             }
         });
 
+        const recordings = response.data.recordings || [];
+        const found = recordings.some((recording: any) => {
+            const titleMatch = recording.title?.toLowerCase().includes(title.toLowerCase());
+            const artistMatch = recording['artist-credit']?.some((credit: any) => 
+                credit.name?.toLowerCase().includes(artist.toLowerCase())
+            );
+            
+            return titleMatch && artistMatch;
+        });
+
+        console.log('MusicBrainz search results:', {
+            query: `recording:"${title}" AND artistname:"${artist}"`,
+            recordingsFound: recordings.length,
+            found
+        });
+
         return {
-            found: response.data.count > 0,
-            recordings: response.data.recordings,
-            confidence: response.data.count > 0 ? 0.7 : 0.2
+            found,
+            recordings,
+            confidence: found ? 0.7 : 0.2
         };
     } catch (error) {
         console.error('MusicBrainz API error:', error);

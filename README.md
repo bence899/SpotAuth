@@ -1,6 +1,3 @@
-Here’s the updated and finalized **README.md** for your project, combining the details you've provided and ensuring clarity, professionalism, and functionality:
-
-```markdown
 # SpotAuth-Lite: Full Stack Application
 
 **SpotAuth-Lite** is a full stack web application designed to validate music uploads before they are added to Spotify's catalog. This project demonstrates how Spotify can implement a service to detect **AI-generated tracks**, **duplicate content**, and **metadata mismatches**, ensuring the integrity of its music catalog. The system combines a user-friendly frontend with a robust backend to simulate real-world functionality.
@@ -65,7 +62,7 @@ Here’s the updated and finalized **README.md** for your project, combining the
 ## **Frontend Workflow**
 
 1. **Authenticate Uploader**
-   - Users log in using Spotify credentials or mock credentials.
+   - Users log in using Spotify credentials.
    - Upon successful login, users are redirected to the upload dashboard.
 
 2. **Submit Metadata**
@@ -77,9 +74,6 @@ Here’s the updated and finalized **README.md** for your project, combining the
      - Metadata matches or mismatches.
      - AI-generated content detection.
      - Duplicate content flags.
-
-4. **Download Reports**
-   - Users can download a JSON report summarizing validation results.
 
 ---
 
@@ -129,26 +123,6 @@ Here’s the updated and finalized **README.md** for your project, combining the
          "message": "Authentication successful."
        }
        ```
-
----
-
-## **Example Usage**
-
-1. **Login Workflow**
-   - User clicks “Login” and authenticates using Spotify OAuth.
-   - Upon success, the dashboard is displayed.
-
-2. **Track Upload**
-   - User submits metadata (e.g., “Ocean Waves” by DJ Bliss) and optionally uploads an audio file.
-   - Clicks “Validate Track.”
-
-3. **Validation Results**
-   - The app displays:
-     - Success: “Track validated successfully and ready for upload.”
-     - Error: “Track flagged as AI-generated content. Please revise your submission.”
-
-4. **Download Reports**
-   - Users download a detailed report summarizing the validation process.
 
 ---
 
